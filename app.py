@@ -28,17 +28,19 @@ else:
     # ---------------- ระบบฟิลเตอร์ (Sidebar) ----------------
     st.sidebar.header("🔍 ค้นหาสถานที่")
     
-    # ดึงรายชื่อจังหวัดและหมวดหมู่ทั้งหมดที่มีในฐานข้อมูลมาทำเป็นตัวเลือก
     all_provinces = list(set([item['province'] for item in data if item['province']]))
     all_categories = list(set([item['category'] for item in data if item['category']]))
     
-    selected_province = st.sidebar.multiselect("📍 เลือกจังหวัด", all_provinces, default=all_provinces)
-    selected_category = st.sidebar.multiselect("🏷️ เลือกหมวดหมู่", all_categories, default=all_categories)
+    # เอา default ออก เพื่อให้กล่องเริ่มต้นแบบโล่งๆ สบายตา
+    selected_province = st.sidebar.multiselect("📍 เลือกจังหวัด", all_provinces)
+    selected_category = st.sidebar.multiselect("🏷️ เลือกหมวดหมู่", all_categories)
     
-    # กรองข้อมูลตามที่ผู้ใช้เลือกใน Sidebar
+    # ปรับลอจิกการกรองใหม่: 
+    # ถ้ากล่องว่างเปล่า (not selected_...) ให้ถือว่าผ่านเงื่อนไข (แสดงทั้งหมด)
     filtered_data = [
         item for item in data 
-        if item['province'] in selected_province and item['category'] in selected_category
+        if (not selected_province or item['province'] in selected_province) and 
+           (not selected_category or item['category'] in selected_category)
     ]
     
     st.markdown(f"**พบสถานที่ทั้งหมด {len(filtered_data)} แห่ง**")
