@@ -199,6 +199,6 @@ else:
             # ปุ่มกดลิงก์ไปดูคลิป
             st.markdown(f"[▶️ เปิดดูคลิปต้นฉบับ]({item['url']})")
             # ต้องใส่ key ให้ปุ่มด้วย เพื่อไม่ให้ Streamlit สับสนว่าเรากดปุ่มไหน
-            if st.button("✏️ แก้ไขข้อมูล", key=f"edit_{item['url']}"):
+            if st.button("✏️ แก้ไขข้อมูล", key=f"edit_{index}_{item['url']}"):
                 edit_dialog(item)
             st.markdown("---")
