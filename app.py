@@ -50,13 +50,14 @@ if 'user_id' not in st.session_state:
     # --- กรณี 2: เข้าเว็บมาครั้งแรก ยังไม่ล็อกอิน ให้โชว์ปุ่ม ---
     else:
         st.title("กรุณาเข้าสู่ระบบ")
-        st.write("โปรดยืนยันตัวตนผ่าน LINE ครับก่อนใช้งานนะครับ")
+        st.write("โปรดยืนยันตัวตนผ่าน LINE ก่อนนะครับ")
         
         # สร้างลิงก์สำหรับไปหน้า Allow ของ LINE
         auth_url = f"https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id={LINE_CLIENT_ID}&redirect_uri={urllib.parse.quote(REDIRECT_URI)}&state=secure_login&scope=profile%20openid"
         
-        st.markdown(f'<a href="{auth_url}" target="_top"><button style="background-color:#06C755; color:white; padding:10px 20px; border:none; border-radius:5px; font-size:16px; cursor:pointer;">Login with LINE</button></a>', unsafe_allow_html=True)
-        st.stop()
+        # 🟢 เปลี่ยนมาใช้คำสั่งนี้แทน มันจะบังคับเปิดหน้าต่าง/แท็บใหม่ให้อัตโนมัติ รอดจาก Iframe แน่นอน
+        st.link_button("Login with LINE", url=auth_url, type="primary")
+        st.stop() # 🛑 สั่งให้เว็บหยุดทำงานแค่นี้ ไม่ต้องรันโค้ดข้างล่างต่อจนกว่าจะล็อกอิน
 
 # ---------------- ตั้งค่าหน้าเว็บ ----------------
 st.set_page_config(page_title="My Travel Collection", page_icon="✈️", layout="wide")
