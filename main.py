@@ -9,6 +9,10 @@ import requests
 import uuid
 
 app = FastAPI()
+# ---------------- หน้าเว็บเปล่าสำหรับให้ UptimeRobot ยิง Ping กระตุก ----------------
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "Bot is awake!"}
 
 # ---------------- ตั้งค่า LINE API ----------------
 LINE_CHANNEL_ACCESS_TOKEN = 'zQ+I9g5CNWhfBujbqB+wVvxdPQ9aMBl4QVxuPPfKSnjQwIvH/Ddliuv0lHnbYf8+OsvxJ/MBObmYoE87PglYbRNUGOqwW673G/zBMXMEKBlZrm2zjSakUiY0gLnYJ0LpUuaQGhJzSPY4j7c8bbHB2QdB04t89/1O/w1cDnyilFU='
