@@ -41,28 +41,23 @@ def edit_dialog(item):
     current_prov = item['province']
     current_cat = item['category'] if item['category'] in CATEGORIES_LIST else "อื่นๆ 📌"
     
-    # 🕵️‍♂️ ค้นหาว่าจังหวัดเดิมอยู่ในภาคไหน
+    # --- ส่วนที่ 1: จังหวัด (ใช้ Dropdown เหมือนเดิม เพราะรายชื่อเยอะ พิมพ์ค้นหาได้จะสะดวกกว่า) ---
     default_region = "อื่นๆ"
     for region, provinces in REGIONS_DATA.items():
         if current_prov in provinces:
             default_region = region
             break
             
-    # ถ้าหาไม่เจอจริงๆ ให้ไปตกที่ "อื่นๆ" และกำหนดจังหวัดเป็น "ไม่ระบุ"
     if default_region == "อื่นๆ" and current_prov not in REGIONS_DATA["อื่นๆ"]:
         current_prov = "ไม่ระบุ (รอแก้ทีหลัง)"
     
-    # 🔽 กล่องเลือกที่ 1: เลือกภาค (เมื่อเลือกแล้ว จะดึงรายชื่อจังหวัดในภาคนั้นมา)
     selected_region = st.selectbox(
         "🗺️ เลือกภูมิภาค", 
         options=list(REGIONS_DATA.keys()), 
         index=list(REGIONS_DATA.keys()).index(default_region)
     )
     
-    # 🔽 กล่องเลือกที่ 2: เลือกจังหวัด (รายการจะเปลี่ยนไปตามภาคที่เลือกด้านบน)
     available_provinces = REGIONS_DATA[selected_region]
-    
-    # เช็คว่าจังหวัดที่เคยเลือกไว้ ยังอยู่ในภาคที่เพิ่งเปลี่ยนหรือไม่
     prov_index = available_provinces.index(current_prov) if current_prov in available_provinces else 0
         
     new_province = st.selectbox(
@@ -71,10 +66,12 @@ def edit_dialog(item):
         index=prov_index
     )
     
-    new_category = st.selectbox(
+    # --- ส่วนที่ 2: หมวดหมู่ (เปลี่ยนเป็นปุ่มกดแนวนอน จิ้มได้อย่างเดียว พิมพ์ไม่ได้ 100%) ---
+    new_category = st.radio(
         "🏷️ หมวดหมู่", 
         options=CATEGORIES_LIST, 
-        index=CATEGORIES_LIST.index(current_cat)
+        index=CATEGORIES_LIST.index(current_cat),
+        horizontal=True
     )
     
     if st.button("💾 บันทึกการแก้ไข", type="primary"):
