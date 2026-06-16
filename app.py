@@ -4,8 +4,8 @@ import urllib.parse
 import requests
 
 # ---------------- ตั้งค่า LINE Login ----------------
-LINE_CLIENT_ID = "2010420530"
-LINE_CLIENT_SECRET = "eca78c3306bbd029a0a48a4570e66a84"
+LINE_CLIENT_ID = "2010420584"
+LINE_CLIENT_SECRET = "4278d0a8b73b1134bb95b4bbea16a517"
 # ลิงก์เว็บ Streamlit ของคุณ (ต้องตรงกับที่ใส่ใน Callback URL เป๊ะๆ และต้องมี / ปิดท้ายถ้าตอนตั้งค่าใส่ไว้)
 REDIRECT_URI = "https://my-travel.streamlit.app/"
 
