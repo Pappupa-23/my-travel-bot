@@ -8,6 +8,9 @@ from supabase import create_client, Client
 import requests 
 import uuid
 
+# ตัวแปรจำสถานะการรอรับลิงก์ของแต่ละห้องแชท
+listening_chats = {}
+
 app = FastAPI()
 # ---------------- หน้าเว็บเปล่าสำหรับให้ UptimeRobot ยิง Ping กระตุก ----------------
 @app.get("/")
@@ -169,20 +172,69 @@ def upload_image_to_supabase(image_url):
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     text_received = event.message.text
-    user_id = event.source.user_id
+    source_type = event.source.type
+    user_id = event.source.user_id # เก็บรหัสคนพิมพ์ไว้ทำ Log
     
-    print(f"[Log] User: {user_id} ส่งข้อความ: {text_received}")
+    # ---------------- 🟢 2. แยกแยะ ID ของห้องแชท ----------------
+    if source_type == 'group':
+        chat_id = event.source.group_id
+    elif source_type == 'room':
+        chat_id = event.source.room_id
+    else:
+        chat_id = event.source.user_id
+        
+    print(f"[Log] Source: {source_type} ({chat_id}) | User: {user_id} ส่งข้อความ: {text_received}")
     
     url = extract_url(text_received)
-    
-    if not url:
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="ส่งมาแค่ลิงก์ TikTok หรือ IG ได้เลยนะครับ 📌")
-        )
-        return
+    has_link = bool(url)
 
-    # ตอบกลับก่อนว่ากำลังทำงาน (เพราะโหลดข้อมูลและเซฟ DB อาจใช้เวลา 1-2 วินาที)
+    # ---------------- 🟢 3. บริหารจัดการโหมดการทำงาน ----------------
+    
+    # กรณีที่ 1: คุยส่วนตัวกับบอทแบบ 1-on-1 (ไม่ต้องใช้คีย์เวิร์ด)
+    if source_type == 'user':
+        if not url:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="ส่งมาแค่ลิงก์ TikTok หรือ IG ได้เลยนะครับ 📌")
+            )
+            return
+        # ถ้ามี URL ระบบจะไหลลงไปทำงานส่วนดึงข้อมูลด้านล่างต่อทันที
+        
+    # กรณีที่ 2: อยู่ในกลุ่ม (Group) หรือ แชทหลายคน (Room)
+    else:
+        # เช็คคำสั่ง "ปลุกบอท"
+        trigger_keywords = ["ไปเที่ยวกัน", "เซฟที่นี่", "เรียกบอท"]
+        if any(keyword in text_received for keyword in trigger_keywords):
+            listening_chats[chat_id] = True # เปิดโหมดรอฟังให้ห้องนี้
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="🎒 พร้อมจดแล้ว! ส่งลิงก์สถานที่มาได้เลยครับ (หรือพิมพ์ 'ยกเลิก' เพื่อปิดการจด)")
+            )
+            return
+            
+        # เช็คสถานะว่าห้องนี้กำลังอยู่ในโหมด "รอฟังลิงก์" อยู่หรือไม่?
+        if listening_chats.get(chat_id) == True:
+            if text_received == "ยกเลิก":
+                listening_chats[chat_id] = False # ปิดโหมดแมนนวล
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="โอเคครับ พับสมุดเก็บเรียบร้อย 😅")
+                )
+                return
+            elif has_link:
+                # ได้ลิงก์สมใจแล้ว! สั่งปิดโหมดรอฟังทันที แล้วไหลลงไปทำงานด้านล่าง
+                listening_chats[chat_id] = False
+            else:
+                # ถ้ากำลังรอลิงก์อยู่ แต่คนในกลุ่มพิมพ์คุยเรื่องอื่น ให้บอทอยู่เงียบๆ ไม่ตอบโต้
+                return
+        else:
+            # ถ้าไม่ได้ปลุกบอท และบอทก็ไม่ได้รอฟังอยู่ ให้เงียบสนิท 100% ไม่กวนแชทกลุ่ม
+            return
+
+    # ---------------- 🟢 4. ส่วนวิเคราะห์ บันทึกข้อมูล และส่ง Flex Message ----------------
+    # (ใช้ลอจิกเดิมของคุณ แต่เปลี่ยนปลายทางเป็น chat_id)
+    
+    # ตอบกลับก่อนว่ากำลังทำงาน
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text="กำลังวิเคราะห์และบันทึกข้อมูล... รอแป๊บนึงนะครับ ⏳")
@@ -194,9 +246,7 @@ def handle_message(event):
         text_to_analyze = f"{video_data['uploader']} {video_data['description']}"
         province, category = analyze_text(text_to_analyze)
         
-       # 📥 ส่วนที่บันทึกข้อมูล
         try:
-            # ใช้ฟังก์ชันใหม่ดาวน์โหลดรูปมาเก็บที่บ้านเราก่อน
             permanent_thumbnail = upload_image_to_supabase(video_data['thumbnail'])
             
             db_data = {
@@ -205,12 +255,12 @@ def handle_message(event):
                 "province": province,
                 "category": category,
                 "uploader": video_data['uploader'],
-                "thumbnail": permanent_thumbnail, # ใช้ลิงก์ที่อัปโหลดเข้า Storage แล้ว
-                "added_by": user_id
+                "thumbnail": permanent_thumbnail, 
+                "added_by": chat_id # 🟢 เปลี่ยนจาก user_id เป็น chat_id เพื่อระบุว่าเป็นของกลุ่ม/ห้องนี้
             }
             supabase.table("travel_links").insert(db_data).execute()
             
-            # 🎨 ส่วนที่อัปเกรด: สร้าง Flex Message JSON สำหรับส่งกลับ
+            # สร้าง Flex Message JSON (ใช้โค้ดโครงสร้างสวยงามตัวเดิมของคุณ)
             flex_json = {
                 "type": "bubble",
                 "hero": {
@@ -277,19 +327,18 @@ def handle_message(event):
                             "type": "button",
                             "style": "primary",
                             "height": "sm",
-                            "color": "#06C755", # สีเขียวสไตล์ LINE
+                            "color": "#06C755", 
                             "action": {
-                                "type": "uri",
-                                "label": "เปิดดูคลิปต้นฉบับ",
-                                "uri": url
-                            }
+                                        "type": "uri",
+                                        "label": "เปิดดูคลิปต้นฉบับ",
+                                        "uri": url
+                                    }
                         }
                     ],
                     "flex": 0
                 }
             }
             
-            # ใช้ FlexSendMessage แทน TextSendMessage
             msg_to_send = FlexSendMessage(alt_text="บันทึกสถานที่สำเร็จ!", contents=flex_json)
             
         except Exception as db_err:
@@ -298,6 +347,6 @@ def handle_message(event):
     else:
         msg_to_send = TextSendMessage(text="❌ ดึงข้อมูลไม่สำเร็จครับ อาจจะเป็นลิงก์ส่วนตัว หรือระบบขัดข้อง")
 
-    # ส่งข้อความกลับหาผู้ใช้
-    line_bot_api.push_message(user_id, msg_to_send)
+    # 🟢 เปลี่ยนจาก user_id เป็น chat_id เพื่อให้บอทพ่นการ์ด Flex กลับมาในกลุ่ม ไม่ใช่กระซิบส่วนตัวไปหาคนส่ง
+    line_bot_api.push_message(chat_id, msg_to_send)
 
