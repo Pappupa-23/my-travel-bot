@@ -121,19 +121,50 @@ def extract_url(text):
     return match.group(0) if match else None
 
 def fetch_video_data(url):
-    ydl_opts = {'quiet': True, 'skip_download': True}
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    ydl_opts = {'quiet': True}
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
             info = ydl.extract_info(url, download=False)
+            
+            # 1. ดึงข้อมูลดิบออกมาก่อน
+            raw_title = info.get('title') or ""
+            raw_desc = info.get('description') or ""
+            
+            # 2. ฟังก์ชันย่อยสำหรับเช็คว่าข้อความนี้เป็น "ยอดวิว" หรือ "ขยะ" หรือไม่
+            def is_garbage(text):
+                if not text: 
+                    return True
+                text = str(text).strip()
+                # ตรวจจับแพทเทิร์นตัวเลขยอดวิว เช่น 1.2M, 500K, 120k views, 1.5M วิว, เล่น 2M ครั้ง
+                pattern = r'^(เล่น)?\s*\d+(\.\d+)?[KMkm]?\s*(views?|วิว|plays?|ครั้ง)?$'
+                if re.match(pattern, text) or len(text) < 3:
+                    return True
+                return False
+
+            # 3. ลอจิกเลือกชื่อคลิป (Fallback)
+            final_title = ""
+            if not is_garbage(raw_title):
+                final_title = raw_title
+            elif not is_garbage(raw_desc):
+                # ถ้า title เป็นยอดวิว ให้สลับไปใช้แคปชั่น (description) แทน
+                final_title = raw_desc
+            else:
+                # ถ้าพังทั้งคู่ หรือไม่มีข้อความเลย ใช้ค่า Default
+                final_title = "คลิปน่าสนใจ (ไม่มีแคปชั่น)"
+                
+            # 4. เตรียมข้อความสำหรับให้ AI วิเคราะห์ (เอามาต่อกันเพื่อความชัวร์ว่า AI จะได้ข้อมูลไปเดาจังหวัด)
+            text_to_analyze = f"{raw_title} {raw_desc}".strip()
+
             return {
-                "title": info.get('title', 'ไม่พบชื่อคลิป'),
-                "description": info.get('description', ''),
-                "thumbnail": info.get('thumbnail', ''),
-                "uploader": info.get('uploader', 'ไม่ทราบชื่อผู้โพสต์')
+                "title": final_title,
+                "uploader": info.get('uploader') or info.get('creator') or "ไม่ทราบชื่อผู้โพสต์",
+                "thumbnail": info.get('thumbnail') or "",
+                "description": text_to_analyze 
             }
-    except Exception as e:
-        print(f"[Error] ดึงข้อมูลไม่ได้: {e}")
-        return None
+            
+        except Exception as e:
+            print(f"[Error] fetch_video_data: {e}")
+            return None
 
 # ---------------- Webhook Route ----------------
 @app.post("/webhook")
