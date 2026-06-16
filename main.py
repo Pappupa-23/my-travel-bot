@@ -1,0 +1,299 @@
+import re
+import yt_dlp
+from fastapi import FastAPI, Request, HTTPException
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage, FlexSendMessage
+from supabase import create_client, Client
+import requests 
+import uuid
+
+app = FastAPI()
+
+# ---------------- ตั้งค่า LINE API ----------------
+LINE_CHANNEL_ACCESS_TOKEN = 'zQ+I9g5CNWhfBujbqB+wVvxdPQ9aMBl4QVxuPPfKSnjQwIvH/Ddliuv0lHnbYf8+OsvxJ/MBObmYoE87PglYbRNUGOqwW673G/zBMXMEKBlZrm2zjSakUiY0gLnYJ0LpUuaQGhJzSPY4j7c8bbHB2QdB04t89/1O/w1cDnyilFU='
+LINE_CHANNEL_SECRET = '61041fb21f74a2bc4e16c6bc4cfbec1f'
+
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
+# ---------------- ตั้งค่า Supabase ----------------
+# ใช้ Project ID ของคุณสร้าง URL ได้เลย
+SUPABASE_URL = 'https://dfhxqkbiztiajqgcppzi.supabase.co'
+# ⚠️ นำ Service Role Key (secret) ที่ก็อปมา วางในเครื่องหมายคำพูดด้านล่างนี้ครับ
+SUPABASE_KEY = 'sb_secret_xa81Pdy40ReMVk831uqcPw_SKV5fATl' 
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# ==========================================
+# ฐานข้อมูลคำค้นหา
+# ==========================================
+PROVINCES = {
+    # ภาคกลาง และ กทม.
+    "กรุงเทพ", "กรุงเทพมหานคร", "กทม", "bangkok", "bkk", "อยุธยา", "นครปฐม", "นนทบุรี", 
+    "ปทุมธานี", "สมุทรปราการ", "สมุทรสาคร", "สมุทรสงคราม", "อัมพวา", "สระบุรี", "ลพบุรี", 
+    "สุพรรณบุรี", "นครนายก",
+    
+    # ภาคเหนือ
+    "เชียงใหม่", "chiang mai", "เชียงราย", "chiang rai", "แม่ฮ่องสอน", "ปาย", "ลำพูน", 
+    "ลำปาง", "แพร่", "น่าน", "nan", "พะเยา", "อุตรดิตถ์", "พิษณุโลก", "สุโขทัย", "เพชรบูรณ์", 
+    "เขาค้อ", "ภูทับเบิก", "นครสวรรค์",
+    
+    # ภาคใต้
+    "ภูเก็ต", "phuket", "กระบี่", "krabi", "พังงา", "เขาหลัก", "สุราษฎร์ธานี", "สมุย", 
+    "พะงัน", "นครศรีธรรมราช", "สิชล", "ตรัง", "พัทลุง", "สงขลา", "หาดใหญ่", "สตูล", 
+    "หลีเป๊ะ", "ปัตตานี", "ยะลา", "เบตง", "นราธิวาส", "ชุมพร", "ระนอง",
+    
+    # ภาคตะวันออก
+    "ชลบุรี", "พัทยา", "pattaya", "บางแสน", "เกาะล้าน", "ระยอง", "เกาะเสม็ด", "จันทบุรี", 
+    "ตราด", "เกาะช้าง", "เกาะกูด", "ฉะเชิงเทรา", "ปราจีนบุรี", "สระแก้ว",
+    
+    # ภาคตะวันตก
+    "กาญจนบุรี", "kanchanaburi", "สังขละบุรี", "ราชบุรี", "สวนผึ้ง", "เพชรบุรี", "ชะอำ", 
+    "ประจวบคีรีขันธ์", "หัวหิน", "hua hin", "ตาก",
+    
+    # ภาคอีสาน
+    "นครราชสีมา", "โคราช", "เขาใหญ่", "khao yai", "ปากช่อง", "ขอนแก่น", "khon kaen", 
+    "อุดรธานี", "อุบลราชธานี", "บุรีรัมย์", "สุรินทร์", "ศรีสะเกษ", "ร้อยเอ็ด", "มหาสารคาม", 
+    "กาฬสินธุ์", "ชัยภูมิ", "หนองคาย", "หนองบัวลำภู", "เลย", "เชียงคาน", "ภูกระดึง", 
+    "สกลนคร", "นครพนม", "มุกดาหาร", "ยโสธร", "อำนาจเจริญ", "บึงกาฬ"
+}
+
+CATEGORIES = {
+    "กิน 🍽️": [
+        "ชิม", "คาเฟ่", "ร้านอาหาร", "ของกิน", "อร่อย", "หิว", "กาแฟ", "ขนม", "ของหวาน",
+        "ชาบู", "หมูกระทะ", "บุฟเฟ่ต์", "บาร์", "เหล้า", "เบียร์", "สตรีทฟู้ด", "มิชลิน", 
+        "cafe", "restaurant", "food", "coffee", "bar", "buffet", "eat", "drink"
+    ],
+    "พัก 🏨": [
+        "ที่พัก", "โรงแรม", "รีสอร์ท", "โฮมสเตย์", "กางเต็นท์", "เต็นท์", "แคมป์ปิ้ง", 
+        "พูลวิลล่า", "โฮสเทล", "ห้องพัก", "นอนไหน", "ที่นอน",
+        "hotel", "resort", "hostel", "villa", "homestay", "camp", "accommodation", "stay"
+    ],
+    "เที่ยว 🏞️": [
+        "ที่เที่ยว", "เที่ยว", "จุดชมวิว", "ทะเล", "ภูเขา", "น้ำตก", "วัด", "มิวเซียม", 
+        "พิพิธภัณฑ์", "สวนสัตว์", "ถ่ายรูป", "มุมถ่ายรูป", "แลนด์มาร์ค", "อุทยาน", "ธรรมชาติ",
+        "น้ำขึ้น", "พระอาทิตย์ตก", "สวยมาก", "วิว", "บรรยากาศดี", 
+        "attraction", "travel", "viewpoint", "beach", "mountain", "waterfall", "temple", "museum", "sunset", "view"
+    ],
+    "เดินทาง 🚗": [
+        "การเดินทาง", "รถไฟ", "รถบัส", "รถทัวร์", "เครื่องบิน", "ตั๋วเครื่องบิน", "สนามบิน", 
+        "เช่ารถ", "รถเช่า", "รถตู้", "บีทีเอส", "bts", "mrt", "เรือ", 
+        "transport", "flight", "train", "bus", "car rental", "airport", "ticket"
+    ],
+    "ช้อปปิ้ง 🛍️": [
+        "ตลาด", "ห้าง", "ช้อปปิ้ง", "ซื้อของ", "ของฝาก", "ถนนคนเดิน", "ตลาดนัด", "ตลาดกลางคืน",
+        "market", "shopping", "mall", "souvenir", "walking street", "night market"
+    ]
+}
+
+# ---------------- ฟังก์ชันช่วยเหลือ ----------------
+def analyze_text(text):
+    text = text.lower()
+    found_province = "ไม่ระบุ (รอแก้ทีหลัง)"
+    found_category = "อื่นๆ 📌"
+
+    for p in PROVINCES:
+        if p in text:
+            if p in ["bangkok"]: found_province = "กรุงเทพ"
+            elif p in ["พัทยา"]: found_province = "ชลบุรี"
+            elif p in ["เขาใหญ่"]: found_province = "นครราชสีมา"
+            elif p in ["หัวหิน"]: found_province = "ประจวบคีรีขันธ์"
+            else: found_province = p
+            break
+            
+    for cat, keywords in CATEGORIES.items():
+        if any(kw in text for kw in keywords):
+            found_category = cat
+            break
+            
+    return found_province, found_category
+
+def extract_url(text):
+    url_pattern = re.compile(r'https?://\S+')
+    match = url_pattern.search(text)
+    return match.group(0) if match else None
+
+def fetch_video_data(url):
+    ydl_opts = {'quiet': True, 'skip_download': True}
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            return {
+                "title": info.get('title', 'ไม่พบชื่อคลิป'),
+                "description": info.get('description', ''),
+                "thumbnail": info.get('thumbnail', ''),
+                "uploader": info.get('uploader', 'ไม่ทราบชื่อผู้โพสต์')
+            }
+    except Exception as e:
+        print(f"[Error] ดึงข้อมูลไม่ได้: {e}")
+        return None
+
+# ---------------- Webhook Route ----------------
+@app.post("/webhook")
+async def callback(request: Request):
+    signature = request.headers.get('X-Line-Signature')
+    body = await request.body()
+    body_str = body.decode('utf-8')
+
+    try:
+        handler.handle(body_str, signature)
+    except InvalidSignatureError:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    return "OK"
+
+# ---------------- ฟังก์ชันอัปโหลดรูป ----------------
+def upload_image_to_supabase(image_url):
+    try:
+        # ดาวน์โหลดรูปจาก IG/TikTok
+        response = requests.get(image_url, stream=True)
+        if response.status_code == 200:
+            file_name = f"{uuid.uuid4()}.jpg"
+            # อัปโหลดเข้า Storage Bucket ชื่อ 'images'
+            supabase.storage.from_("images").upload(
+                file=response.content,
+                path=file_name,
+                file_options={"content-type": "image/jpeg"}
+            )
+            # ดึง URL ของรูปที่อัปโหลดสำเร็จ
+            return supabase.storage.from_("images").get_public_url(file_name)
+    except Exception as e:
+        print(f"[Storage Error] {e}")
+    return image_url # ถ้าอัปโหลดไม่ผ่าน ให้ใช้ลิงก์เดิมไปก่อน
+
+# ---------------- จัดการข้อความที่รับเข้ามา ----------------
+@handler.add(MessageEvent, message=TextMessage)
+def handle_message(event):
+    text_received = event.message.text
+    user_id = event.source.user_id
+    
+    print(f"[Log] User: {user_id} ส่งข้อความ: {text_received}")
+    
+    url = extract_url(text_received)
+    
+    if not url:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="ส่งมาแค่ลิงก์ TikTok หรือ IG ได้เลยนะครับ 📌")
+        )
+        return
+
+    # ตอบกลับก่อนว่ากำลังทำงาน (เพราะโหลดข้อมูลและเซฟ DB อาจใช้เวลา 1-2 วินาที)
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text="กำลังวิเคราะห์และบันทึกข้อมูล... รอแป๊บนึงนะครับ ⏳")
+    )
+        
+    video_data = fetch_video_data(url)
+        
+    if video_data:
+        text_to_analyze = f"{video_data['uploader']} {video_data['description']}"
+        province, category = analyze_text(text_to_analyze)
+        
+       # 📥 ส่วนที่บันทึกข้อมูล
+        try:
+            # ใช้ฟังก์ชันใหม่ดาวน์โหลดรูปมาเก็บที่บ้านเราก่อน
+            permanent_thumbnail = upload_image_to_supabase(video_data['thumbnail'])
+            
+            db_data = {
+                "url": url,
+                "title": video_data['title'][:100],
+                "province": province,
+                "category": category,
+                "uploader": video_data['uploader'],
+                "thumbnail": permanent_thumbnail, # ใช้ลิงก์ที่อัปโหลดเข้า Storage แล้ว
+                "added_by": user_id
+            }
+            supabase.table("travel_links").insert(db_data).execute()
+            
+            # 🎨 ส่วนที่อัปเกรด: สร้าง Flex Message JSON สำหรับส่งกลับ
+            flex_json = {
+                "type": "bubble",
+                "hero": {
+                    "type": "image",
+                    "url": video_data['thumbnail'] if video_data['thumbnail'] else "https://via.placeholder.com/600x400?text=No+Image",
+                    "size": "full",
+                    "aspectRatio": "16:9",
+                    "aspectMode": "cover"
+                },
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": video_data['title'][:40] + "..." if len(video_data['title']) > 40 else video_data['title'],
+                            "weight": "bold",
+                            "size": "md",
+                            "wrap": True
+                        },
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "margin": "lg",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "box",
+                                    "layout": "baseline",
+                                    "spacing": "sm",
+                                    "contents": [
+                                        {"type": "text", "text": "📍 จังหวัด", "color": "#aaaaaa", "size": "sm", "flex": 2},
+                                        {"type": "text", "text": province, "wrap": True, "color": "#666666", "size": "sm", "flex": 5}
+                                    ]
+                                },
+                                {
+                                    "type": "box",
+                                    "layout": "baseline",
+                                    "spacing": "sm",
+                                    "contents": [
+                                        {"type": "text", "text": "🏷️ หมวด", "color": "#aaaaaa", "size": "sm", "flex": 2},
+                                        {"type": "text", "text": category, "wrap": True, "color": "#666666", "size": "sm", "flex": 5}
+                                    ]
+                                },
+                                {
+                                    "type": "box",
+                                    "layout": "baseline",
+                                    "spacing": "sm",
+                                    "contents": [
+                                        {"type": "text", "text": "👤 โพสต์โดย", "color": "#aaaaaa", "size": "sm", "flex": 2},
+                                        {"type": "text", "text": video_data['uploader'], "wrap": True, "color": "#666666", "size": "sm", "flex": 5}
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "footer": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "spacing": "sm",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "style": "primary",
+                            "height": "sm",
+                            "color": "#06C755", # สีเขียวสไตล์ LINE
+                            "action": {
+                                "type": "uri",
+                                "label": "เปิดดูคลิปต้นฉบับ",
+                                "uri": url
+                            }
+                        }
+                    ],
+                    "flex": 0
+                }
+            }
+            
+            # ใช้ FlexSendMessage แทน TextSendMessage
+            msg_to_send = FlexSendMessage(alt_text="บันทึกสถานที่สำเร็จ!", contents=flex_json)
+            
+        except Exception as db_err:
+            print(f"[Database Error] บันทึกไม่สำเร็จ: {db_err}")
+            msg_to_send = TextSendMessage(text="❌ ดึงข้อมูลได้ แต่บันทึกลงฐานข้อมูลไม่สำเร็จครับ")
+    else:
+        msg_to_send = TextSendMessage(text="❌ ดึงข้อมูลไม่สำเร็จครับ อาจจะเป็นลิงก์ส่วนตัว หรือระบบขัดข้อง")
+
+    # ส่งข้อความกลับหาผู้ใช้
+    line_bot_api.push_message(user_id, msg_to_send)
+
