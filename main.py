@@ -126,34 +126,43 @@ def fetch_video_data(url):
         try:
             info = ydl.extract_info(url, download=False)
             
-            # 1. ดึงข้อมูลดิบออกมาก่อน
             raw_title = info.get('title') or ""
             raw_desc = info.get('description') or ""
             
-            # 2. ฟังก์ชันย่อยสำหรับเช็คว่าข้อความนี้เป็น "ยอดวิว" หรือ "ขยะ" หรือไม่
-            def is_garbage(text):
+            # 🟢 ฟังก์ชันผ่าตัดล้างขยะ (ปรับให้จับเฉพาะ views, reactions, shares)
+            def clean_garbage_text(text):
                 if not text: 
-                    return True
+                    return ""
                 text = str(text).strip()
-                # ตรวจจับแพทเทิร์นตัวเลขยอดวิว เช่น 1.2M, 500K, 120k views, 1.5M วิว, เล่น 2M ครั้ง
-                pattern = r'^(เล่น)?\s*\d+(\.\d+)?[KMkm]?\s*(views?|วิว|plays?|ครั้ง)?$'
-                if re.match(pattern, text) or len(text) < 3:
-                    return True
-                return False
-
-            # 3. ลอจิกเลือกชื่อคลิป (Fallback)
-            final_title = ""
-            if not is_garbage(raw_title):
-                final_title = raw_title
-            elif not is_garbage(raw_desc):
-                # ถ้า title เป็นยอดวิว ให้สลับไปใช้แคปชั่น (description) แทน
-                final_title = raw_desc
-            else:
-                # ถ้าพังทั้งคู่ หรือไม่มีข้อความเลย ใช้ค่า Default
-                final_title = "คลิปน่าสนใจ (ไม่มีแคปชั่น)"
                 
-            # 4. เตรียมข้อความสำหรับให้ AI วิเคราะห์ (เอามาต่อกันเพื่อความชัวร์ว่า AI จะได้ข้อมูลไปเดาจังหวัด)
-            text_to_analyze = f"{raw_title} {raw_desc}".strip()
+                # สเต็ปที่ 1: ถ้าเจอ | ให้เช็คว่าฝั่งซ้ายมีคำที่ระบุไหม ถ้ามี ให้เอาเฉพาะฝั่งขวา
+                if "|" in text:
+                    parts = text.split("|", 1)
+                    left_side = parts[0].lower()
+                    if any(w in left_side for w in ["views", "reactions", "shares"]):
+                        text = parts[1].strip()
+                
+                # สเต็ปที่ 2: เผื่อกรณีที่ TikTok ไม่ส่ง | มาให้ แต่ขึ้นต้นด้วยยอดวิวตรงๆ
+                text = re.sub(r'^\s*\d+(\.\d+)?[KMkm]?\s*(views|reactions|shares)\s*·?\s*', '', text, flags=re.IGNORECASE)
+                
+                # สเต็ปที่ 3: ล้างเครื่องหมายคำพูดขยะที่ติดมาข้างหน้า
+                text = text.lstrip('”"\'‘“ ')
+                
+                return text.strip()
+
+            # นำข้อความมาผ่านกระบวนการทำความสะอาด
+            cleaned_title = clean_garbage_text(raw_title)
+            cleaned_desc = clean_garbage_text(raw_desc)
+            
+            # เลือกว่าจะใช้ Title หรือ Description
+            if cleaned_title and len(cleaned_title) > 2:
+                final_title = cleaned_title
+            elif cleaned_desc and len(cleaned_desc) > 2:
+                final_title = cleaned_desc
+            else:
+                final_title = "คลิปน่าสนใจ (ไม่มีแคปชั่น)"
+
+            text_to_analyze = f"{cleaned_title} {cleaned_desc}".strip()
 
             return {
                 "title": final_title,
