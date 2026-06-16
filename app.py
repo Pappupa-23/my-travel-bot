@@ -21,6 +21,30 @@ def load_data():
 
 data = load_data()
 
+# ---------------- ฟังก์ชัน Popup สำหรับแก้ไขข้อมูล ----------------
+@st.dialog("📝 แก้ไขรายละเอียดสถานที่")
+def edit_dialog(item):
+    # สร้างฟอร์มให้กรอก โดยดึงข้อมูลเดิมมาแสดงเป็นค่าเริ่มต้น
+    new_title = st.text_area("ชื่อคลิป / รายละเอียด", value=item['title'])
+    new_province = st.text_input("📍 จังหวัด", value=item['province'])
+    new_category = st.text_input("🏷️ หมวดหมู่", value=item['category'])
+    
+    if st.button("💾 บันทึกการแก้ไข", type="primary"):
+        try:
+            # อัปเดตข้อมูลลงฐานข้อมูล Supabase (อ้างอิงจาก url เพราะไม่ซ้ำกัน)
+            supabase.table("travel_links").update({
+                "title": new_title,
+                "province": new_province,
+                "category": new_category
+            }).eq("url", item['url']).execute()
+            
+            st.success("บันทึกข้อมูลเรียบร้อย!")
+            # สั่งให้เว็บล้างแคชและรีเฟรชหน้าใหม่เพื่อให้ข้อมูลอัปเดต
+            st.cache_data.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาด: {e}")
+
 # ---------------- ตรวจสอบว่ามีข้อมูลหรือไม่ ----------------
 if not data:
     st.info("ยังไม่มีข้อมูลในระบบ ลองส่งลิงก์ TikTok หรือ IG ผ่าน LINE บอทดูสิ!")
@@ -67,4 +91,7 @@ else:
             
             # ปุ่มกดลิงก์ไปดูคลิป
             st.markdown(f"[▶️ เปิดดูคลิปต้นฉบับ]({item['url']})")
+            # ต้องใส่ key ให้ปุ่มด้วย เพื่อไม่ให้ Streamlit สับสนว่าเรากดปุ่มไหน
+            if st.button("✏️ แก้ไขข้อมูล", key=f"edit_{item['url']}"):
+                edit_dialog(item)
             st.markdown("---")
