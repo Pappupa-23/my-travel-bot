@@ -49,14 +49,14 @@ if 'user_id' not in st.session_state:
                 
     # --- กรณี 2: เข้าเว็บมาครั้งแรก ยังไม่ล็อกอิน ให้โชว์ปุ่ม ---
     else:
-        st.title("🔒 กรุณาเข้าสู่ระบบ")
-        st.write("แกลลอรีนี้เป็นพื้นที่ส่วนตัว โปรดยืนยันตัวตนผ่าน LINE ครับ")
+        st.title("กรุณาเข้าสู่ระบบ")
+        st.write("โปรดยืนยันตัวตนผ่าน LINE ครับก่อนใช้งานนะครับ")
         
         # สร้างลิงก์สำหรับไปหน้า Allow ของ LINE
         auth_url = f"https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id={LINE_CLIENT_ID}&redirect_uri={urllib.parse.quote(REDIRECT_URI)}&state=secure_login&scope=profile%20openid"
         
-        st.markdown(f'<a href="{auth_url}" target="_self"><button style="background-color:#06C755; color:white; padding:10px 20px; border:none; border-radius:5px; font-size:16px; cursor:pointer;">🟢 Login with LINE</button></a>', unsafe_allow_html=True)
-        st.stop() # 🛑 สั่งให้เว็บหยุดทำงานแค่นี้ ไม่ต้องรันโค้ดข้างล่างต่อจนกว่าจะล็อกอิน
+        st.markdown(f'<a href="{auth_url}" target="_top"><button style="background-color:#06C755; color:white; padding:10px 20px; border:none; border-radius:5px; font-size:16px; cursor:pointer;">Login with LINE</button></a>', unsafe_allow_html=True)
+        st.stop()
 
 # ---------------- ตั้งค่าหน้าเว็บ ----------------
 st.set_page_config(page_title="My Travel Collection", page_icon="✈️", layout="wide")
