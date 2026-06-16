@@ -215,14 +215,41 @@ def handle_message(event):
     source_type = event.source.type
     user_id = event.source.user_id # เก็บรหัสคนพิมพ์ไว้ทำ Log
     
-    # ---------------- 🟢 2. แยกแยะ ID ของห้องแชท ----------------
-    if source_type == 'group':
+    # ---------------- 🟢 แก้ไขจุดที่ 2. แยกแยะ ID ของห้องแชท & บันทึกชื่อกลุ่ม ----------------
+    if source_type == 'room':
+        return # ❌ ไม่ทำงานในแชท 2 คนแบบ Room ตามที่กำหนดไว้
+
+    elif source_type == 'group':
         chat_id = event.source.group_id
-    elif source_type == 'room':
-        chat_id = event.source.room_id
-    else:
-        chat_id = event.source.user_id
         
+        if not user_id: 
+            return
+
+        # 1. สั่งให้บอทวิ่งไปดึง "ชื่อกลุ่มจริงๆ" จากระบบของ LINE
+        try:
+            group_summary = line_bot_api.get_group_summary(chat_id)
+            group_name = group_summary.group_name
+        except Exception as e:
+            print(f"[LINE API Error] ดึงชื่อกลุ่มไม่ได้: {e}")
+            group_name = "แกลลอรีกลุ่ม"
+
+        # 2. บันทึกความสัมพันธ์ลงตาราง user_groups เพื่อให้หน้าเว็บดึงไปโชว์ (เช็คก่อนว่าเคยบันทึกไปยัง)
+        try:
+            existing = supabase.table("user_groups").select("id").eq("user_id", user_id).eq("group_id", chat_id).execute()
+            if len(existing.data) == 0:
+                supabase.table("user_groups").insert({
+                    "user_id": user_id,
+                    "group_id": chat_id,
+                    "group_name": group_name
+                }).execute()
+        except Exception as db_err:
+            print(f"[Supabase Error] ไม่สามารถบันทึกข้อมูลกลุ่มได้: {db_err}")
+
+    else:
+        chat_id = event.source.user_id # กรณีคุยส่วนตัว 1-1
+        
+    # ---------------------------------------------------------------------
+    
     print(f"[Log] Source: {source_type} ({chat_id}) | User: {user_id} ส่งข้อความ: {text_received}")
     
     url = extract_url(text_received)
@@ -240,7 +267,7 @@ def handle_message(event):
             return
         # ถ้ามี URL ระบบจะไหลลงไปทำงานส่วนดึงข้อมูลด้านล่างต่อทันที
         
-    # กรณีที่ 2: อยู่ในกลุ่ม (Group) หรือ แชทหลายคน (Room)
+    # กรณีที่ 2: อยู่ในกลุ่ม (Group) 
     else:
         # เช็คคำสั่ง "ปลุกบอท"
         trigger_keywords = ["ไปเที่ยวกัน", "เซฟที่นี่", "เรียกบอท"]

@@ -71,19 +71,52 @@ SUPABASE_KEY = 'sb_secret_xa81Pdy40ReMVk831uqcPw_SKV5fATl'
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ---------------- ดึงข้อมูลจากฐานข้อมูล ----------------
-# แสดงโปรไฟล์คนล็อกอินสวยๆ ที่ Sidebar
+# ---------------- 🟢 ส่วนเลือกประเภทแกลลอรีใน Sidebar ----------------
 st.sidebar.image(st.session_state['picture_url'], width=50)
 st.sidebar.write(f"สวัสดีคุณ **{st.session_state['display_name']}**")
 st.sidebar.markdown("---")
 
-# ปรับการดึงข้อมูล ให้ดึงเฉพาะที่ added_by ตรงกับ user_id ที่ล็อกอิน
-@st.cache_data(ttl=60)
-def load_data(user_id):
-    response = supabase.table("travel_links").select("*").eq("added_by", user_id).order("created_at", desc=True).execute()
+st.sidebar.subheader("🗺️ เลือกพื้นที่แกลลอรี")
+gallery_mode = st.sidebar.radio(
+    "ประเภทพื้นที่",
+    options=["🎒 คอลเลกชันส่วนตัว", "👥 ทริปของกลุ่ม"],
+    label_visibility="collapsed"
+)
+
+# ฟังก์ชันดึงข้อมูลคลิป
+def load_travel_data(target_id):
+    response = supabase.table("travel_links").select("*").eq("added_by", target_id).order("created_at", desc=True).execute()
     return response.data
 
-# ดึงข้อมูลมาใช้งาน
-data = load_data(st.session_state['user_id'])
+# ---------------- 🟢 ลอจิกการแสดงผลแกลลอรีพร้อมใช้จริง ----------------
+if gallery_mode == "🎒 คอลเลกชันส่วนตัว":
+    data = load_travel_data(st.session_state['user_id'])
+    st.title("🎒 แกลลอรีทริปส่วนตัวของคุณ")
+    
+else:
+    st.title("👥 แกลลอรีทริปของกลุ่ม")
+    
+    # 1. วิ่งไปค้นหาว่า User คนนี้อยู่กลุ่มไหนบ้างที่มีบอทสิงอยู่
+    group_response = supabase.table("user_groups").select("group_id, group_name").eq("user_id", st.session_state['user_id']).execute()
+    user_groups = group_response.data
+    
+    if user_groups:
+        # สร้าง Dictionary เก็บชื่อกลุ่มเพื่อโชว์ใน Dropdown 
+        # ตัวอย่าง: {'แก๊งเพื่อนมัธยม': 'C123...', 'ทริปบริษัท': 'C456...'}
+        group_options = {g['group_name']: g['group_id'] for g in user_groups}
+        
+        # 2. สร้างกล่อง Dropdown ให้เลือก "ชื่อกลุ่ม"
+        selected_group_name = st.selectbox("เลือกกลุ่มที่คุณต้องการดู:", list(group_options.keys()))
+        selected_group_id = group_options[selected_group_name]
+        
+        # 3. ดึงข้อมูลคลิปโดยใช้รหัสกลุ่มที่เลือก
+        data = load_travel_data(selected_group_id)
+    else:
+        data = []
+        st.info("💡 คุณยังไม่มีแกลลอรีกลุ่มครับ ลองเชิญบอทเข้ากลุ่ม LINE แล้วพิมพ์คำว่า 'ไปเที่ยวกัน' เพื่อเริ่มสร้างแกลลอรีได้เลย!")
+
+# -----------------------------------------------------------
+# (ด้านล่างนี้คือโค้ดลูปแสดงการ์ดแกลลอรีเดิมของคุณ)
 
 # ---------------- ข้อมูลหมวดหมู่และภูมิภาค ----------------
 REGIONS_DATA = {
