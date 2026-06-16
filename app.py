@@ -1,5 +1,62 @@
 import streamlit as st
 from supabase import create_client, Client
+import urllib.parse
+import requests
+
+# ---------------- ตั้งค่า LINE Login ----------------
+LINE_CLIENT_ID = "2010420530"
+LINE_CLIENT_SECRET = "eca78c3306bbd029a0a48a4570e66a84"
+# ลิงก์เว็บ Streamlit ของคุณ (ต้องตรงกับที่ใส่ใน Callback URL เป๊ะๆ และต้องมี / ปิดท้ายถ้าตอนตั้งค่าใส่ไว้)
+REDIRECT_URI = "https://my-travel.streamlit.app/"
+
+# ---------------- ระบบ LINE Login ----------------
+# เช็คว่าในเซสชันของเว็บมี user_id หรือยัง (ล็อกอินหรือยัง)
+if 'user_id' not in st.session_state:
+    # --- กรณี 1: เพิ่งกด Allow แล้ว LINE ส่งกลับมาพร้อมรหัส code ใน URL ---
+    query_params = st.query_params
+    if "code" in query_params:
+        code = query_params["code"]
+        
+        # นำ code ไปแลกเป็น Access Token
+        token_url = "https://api.line.me/oauth2/v2.1/token"
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": REDIRECT_URI,
+            "client_id": LINE_CLIENT_ID,
+            "client_secret": LINE_CLIENT_SECRET
+        }
+        res = requests.post(token_url, headers=headers, data=data)
+        
+        if res.status_code == 200:
+            access_token = res.json().get("access_token")
+            # นำ Token ไปดึงโปรไฟล์ User
+            profile_url = "https://api.line.me/v2/profile"
+            profile_headers = {"Authorization": f"Bearer {access_token}"}
+            profile_res = requests.get(profile_url, headers=profile_headers)
+            
+            if profile_res.status_code == 200:
+                profile_data = profile_res.json()
+                # 🟢 ล็อกอินสำเร็จ! เก็บ user_id ลงในระบบ
+                st.session_state['user_id'] = profile_data['userId']
+                st.session_state['display_name'] = profile_data['displayName']
+                st.session_state['picture_url'] = profile_data.get('pictureUrl', '')
+                
+                # ล้าง URL ให้สะอาด แล้วรีเฟรชหน้าเว็บ 1 รอบ
+                st.query_params.clear()
+                st.rerun()
+                
+    # --- กรณี 2: เข้าเว็บมาครั้งแรก ยังไม่ล็อกอิน ให้โชว์ปุ่ม ---
+    else:
+        st.title("🔒 กรุณาเข้าสู่ระบบ")
+        st.write("แกลลอรีนี้เป็นพื้นที่ส่วนตัว โปรดยืนยันตัวตนผ่าน LINE ครับ")
+        
+        # สร้างลิงก์สำหรับไปหน้า Allow ของ LINE
+        auth_url = f"https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id={LINE_CLIENT_ID}&redirect_uri={urllib.parse.quote(REDIRECT_URI)}&state=secure_login&scope=profile%20openid"
+        
+        st.markdown(f'<a href="{auth_url}" target="_self"><button style="background-color:#06C755; color:white; padding:10px 20px; border:none; border-radius:5px; font-size:16px; cursor:pointer;">🟢 Login with LINE</button></a>', unsafe_allow_html=True)
+        st.stop() # 🛑 สั่งให้เว็บหยุดทำงานแค่นี้ ไม่ต้องรันโค้ดข้างล่างต่อจนกว่าจะล็อกอิน
 
 # ---------------- ตั้งค่าหน้าเว็บ ----------------
 st.set_page_config(page_title="My Travel Collection", page_icon="✈️", layout="wide")
@@ -13,13 +70,19 @@ SUPABASE_KEY = 'sb_secret_xa81Pdy40ReMVk831uqcPw_SKV5fATl'
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ---------------- ดึงข้อมูลจากฐานข้อมูล ----------------
-# ใช้ st.cache_data เพื่อจำข้อมูลไว้ จะได้ไม่ต้องโหลดใหม่ทุกครั้งที่กดฟิลเตอร์
-@st.cache_data(ttl=60) 
-def load_data():
-    response = supabase.table("travel_links").select("*").execute()
+# แสดงโปรไฟล์คนล็อกอินสวยๆ ที่ Sidebar
+st.sidebar.image(st.session_state['picture_url'], width=50)
+st.sidebar.write(f"สวัสดีคุณ **{st.session_state['display_name']}**")
+st.sidebar.markdown("---")
+
+# ปรับการดึงข้อมูล ให้ดึงเฉพาะที่ added_by ตรงกับ user_id ที่ล็อกอิน
+@st.cache_data(ttl=60)
+def load_data(user_id):
+    response = supabase.table("travel_links").select("*").eq("added_by", user_id).order("created_at", desc=True).execute()
     return response.data
 
-data = load_data()
+# ดึงข้อมูลมาใช้งาน
+data = load_data(st.session_state['user_id'])
 
 # ---------------- ข้อมูลหมวดหมู่และภูมิภาค ----------------
 REGIONS_DATA = {
