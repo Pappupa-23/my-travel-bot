@@ -215,7 +215,7 @@ def handle_message(event):
     source_type = event.source.type
     user_id = event.source.user_id # เก็บรหัสคนพิมพ์ไว้ทำ Log
     
-    # ---------------- 🟢 แก้ไขจุดที่ 2. แยกแยะ ID ของห้องแชท & บันทึกชื่อกลุ่ม ----------------
+    # ---------------- 🟢 แยกแยะ ID ของห้องแชท & บันทึกชื่อกลุ่ม ----------------
     if source_type == 'room':
         return # ❌ ไม่ทำงานในแชท 2 คนแบบ Room ตามที่กำหนดไว้
 
@@ -233,7 +233,7 @@ def handle_message(event):
             print(f"[LINE API Error] ดึงชื่อกลุ่มไม่ได้: {e}")
             group_name = "แกลลอรีกลุ่ม"
 
-        # 2. บันทึกความสัมพันธ์ลงตาราง user_groups เพื่อให้หน้าเว็บดึงไปโชว์ (เช็คก่อนว่าเคยบันทึกไปยัง)
+        # 2. บันทึกความสัมพันธ์ลงตาราง user_groups เพื่อให้หน้าเว็บดึงไปโชว์
         try:
             existing = supabase.table("user_groups").select("id").eq("user_id", user_id).eq("group_id", chat_id).execute()
             if len(existing.data) == 0:
@@ -252,24 +252,33 @@ def handle_message(event):
     
     print(f"[Log] Source: {source_type} ({chat_id}) | User: {user_id} ส่งข้อความ: {text_received}")
     
+    # 🎯 🛠️ จุดที่แทรกเพิ่ม: เช็คคีย์เวิร์ดเรียกดูเว็บทันที (ทำงานทั้งแชทเดี่ยวและกลุ่ม)
+    if text_received in ["ดูที่เที่ยว", "เว็บเที่ยว", "ดูแกลลอรี", "เว็บ", "web"]:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="เข้าไปดูที่เที่ยวและร้านอาหารทั้งหมดที่เราเก็บไว้ได้ที่นี่เลยครับ 👇\nhttps://my-travel.streamlit.app/?openExternalBrowser=1")
+        )
+        return # ดีดตัวออกทันที ไม่ต้องไปเช็คลิงก์หรือเข้าโหมดบันทึกต่อ
+    # ---------------------------------------------------------------------
+
     url = extract_url(text_received)
     has_link = bool(url)
 
-    # ---------------- 🟢 3. บริหารจัดการโหมดการทำงาน ----------------
+    # ---------------- 🟢 บริหารจัดการโหมดการทำงาน ----------------
     
-    # กรณีที่ 1: คุยส่วนตัวกับบอทแบบ 1-on-1 (ไม่ต้องใช้คีย์เวิร์ด)
+    # กรณีที่ 1: คุยส่วนตัวกับบอทแบบ 1-on-1 (ไม่ต้องใช้คีย์เวิร์ดปลุกบอท)
     if source_type == 'user':
         if not url:
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="ส่งมาแค่ลิงก์ TikTok หรือ IG ได้เลยนะครับ 📌")
+                TextSendMessage(text="ส่งมาแค่ลิงก์ TikTok หรือ IG ได้เลยนะครับ 📌\n(หรือพิมพ์ 'เว็บเที่ยว' เพื่อเข้าเว็บแกลลอรี)")
             )
             return
         # ถ้ามี URL ระบบจะไหลลงไปทำงานส่วนดึงข้อมูลด้านล่างต่อทันที
         
     # กรณีที่ 2: อยู่ในกลุ่ม (Group) 
     else:
-        # เช็คคำสั่ง "ปลุกบอท"
+        # เช็คคำสั่ง "ปลุกบอท" เพื่อบันทึกสถานที่
         trigger_keywords = ["ไปเที่ยวกัน", "เซฟที่นี่", "เรียกบอท", "ไปกินกัน"]
         if any(keyword in text_received for keyword in trigger_keywords):
             listening_chats[chat_id] = True # เปิดโหมดรอฟังให้ห้องนี้
@@ -282,20 +291,20 @@ def handle_message(event):
         # เช็คสถานะว่าห้องนี้กำลังอยู่ในโหมด "รอฟังลิงก์" อยู่หรือไม่?
         if listening_chats.get(chat_id) == True:
             if text_received == "ยกเลิก":
-                listening_chats[chat_id] = False # ปิดโหมดแมนนวล
+                listening_chats[chat_id] = False # ปิดโหมด
                 line_bot_api.reply_message(
                     event.reply_token,
                     TextSendMessage(text="โอเคครับ พับสมุดเก็บเรียบร้อย 😅")
                 )
                 return
             elif has_link:
-                # ได้ลิงก์สมใจแล้ว! สั่งปิดโหมดรอฟังทันที แล้วไหลลงไปทำงานด้านล่าง
+                # ได้ลิงก์แล้ว สั่งปิดโหมดรอฟังทันที แล้วไหลลงไปทำงานด้านล่างต่อ
                 listening_chats[chat_id] = False
             else:
-                # ถ้ากำลังรอลิงก์อยู่ แต่คนในกลุ่มพิมพ์คุยเรื่องอื่น ให้บอทอยู่เงียบๆ ไม่ตอบโต้
+                # ถ้ากำลังรอลิงก์ แต่คนคุยเรื่องอื่น ให้บอทเงียบไว้
                 return
         else:
-            # ถ้าไม่ได้ปลุกบอท และบอทก็ไม่ได้รอฟังอยู่ ให้เงียบสนิท 100% ไม่กวนแชทกลุ่ม
+            # ถ้าไม่ได้ปลุกบอท และไม่ได้รอฟัง ให้เงียบสนิท ไม่กวนแชทกลุ่ม
             return
 
     # ---------------- 🟢 4. ส่วนวิเคราะห์ บันทึกข้อมูล และส่ง Flex Message ----------------
@@ -394,12 +403,22 @@ def handle_message(event):
                             "type": "button",
                             "style": "primary",
                             "height": "sm",
-                            "color": "#06C755", 
+                            "color": "#06C755",
                             "action": {
-                                        "type": "uri",
-                                        "label": "เปิดดูคลิปต้นฉบับ",
-                                        "uri": url
-                                    }
+                                "type": "uri",
+                                "label": "▶️ เปิดดูคลิปต้นฉบับ",
+                                "uri": url
+                            }
+                        },
+                        {
+                            "type": "button",
+                            "style": "secondary",
+                            "height": "sm",
+                            "action": {
+                                "type": "uri",
+                                "label": "🌐 ดูแกลลอรีทั้งหมด",
+                                "uri": "https://my-travel.streamlit.app/?openExternalBrowser=1"
+                            }
                         }
                     ],
                     "flex": 0
