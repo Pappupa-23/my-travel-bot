@@ -270,7 +270,7 @@ def handle_message(event):
     # กรณีที่ 2: อยู่ในกลุ่ม (Group) 
     else:
         # เช็คคำสั่ง "ปลุกบอท"
-        trigger_keywords = ["ไปเที่ยวกัน", "เซฟที่นี่", "เรียกบอท"]
+        trigger_keywords = ["ไปเที่ยวกัน", "เซฟที่นี่", "เรียกบอท", "ไปกินกัน"]
         if any(keyword in text_received for keyword in trigger_keywords):
             listening_chats[chat_id] = True # เปิดโหมดรอฟังให้ห้องนี้
             line_bot_api.reply_message(
