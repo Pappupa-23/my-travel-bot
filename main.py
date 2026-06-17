@@ -211,7 +211,7 @@ def upload_image_to_supabase(image_url):
 # ---------------- จัดการข้อความที่รับเข้ามา ----------------
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    text_received = event.message.text
+    text_received = event.message.text.strip()
     source_type = event.source.type
     user_id = event.source.user_id # เก็บรหัสคนพิมพ์ไว้ทำ Log
     
